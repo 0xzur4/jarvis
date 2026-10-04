@@ -112,15 +112,6 @@ jarvis/
 
 ---
 
-## Roadmap
-
-- [ ] Wake-word activation ("Hey Jarvis") instead of pure VAD
-- [ ] More local commands (media control, screenshots, custom shortcuts)
-- [ ] Conversation memory across sessions
-- [ ] Installer (.msi) and auto-update
-
----
-
 ## License
 
 MIT — see [LICENSE](LICENSE).
