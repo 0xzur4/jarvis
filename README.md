@@ -16,7 +16,7 @@ A native Windows desktop voice assistant in C++ — inspired by Iron Man's Jarvi
 - **Voice picker** — choose any SAPI voice installed on your machine (e.g. a female voice), auto-matched to your language, overridable anytime.
 - **Floating pixel face** — borderless transparent window; only the animated pixel face is visible. Mouth animates while speaking, expressions change per state (listening / thinking / speaking). Drag it anywhere, right-click for settings.
 - **Microphone selection** — pick your input device once; remembered afterwards.
-- **Local system commands** — say *"buka visual studio code"*, *"volume 50"*, *"kunci"* to open apps, set volume, or lock the workstation. App-name aliases + Windows App Paths lookup, with spoken success/failure feedback.
+- **Local system commands** — say *"open visual studio code"*, *"volume 50"*, *"lock"* to open apps, set volume, or lock the workstation. App-name aliases + Windows App Paths lookup, with spoken success/failure feedback.
 - **Private by design** — your API key is entered manually on first run and stored encrypted with Windows DPAPI. Nothing is hardcoded.
 
 ---
@@ -47,9 +47,9 @@ A native Windows desktop voice assistant in C++ — inspired by Iron Man's Jarvi
 
 | Say (ID / EN) | Action |
 |---|---|
-| `buka <app>` / `open <app>` | Open an application (aliases: "visual studio code", "chrome", "notepad", "kalkulator", …) |
+| `open <app>` | Open an application (aliases: "visual studio code", "chrome", "notepad", "calculator", …) |
 | `volume <0-100>` | Set system volume |
-| `kunci` / `lock` | Lock the workstation |
+| `lock` | Lock the workstation |
 | anything else | Sent to the AI brain, answered by voice |
 
 ---
