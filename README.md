@@ -4,7 +4,9 @@ A native Windows desktop voice assistant in C++ — inspired by Iron Man's Jarvi
 
 ![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11-blue) ![Language](https://img.shields.io/badge/language-C%2B%2B17-orange) ![License](https://img.shields.io/badge/license-MIT-green)
 
-> **Status:** v4 — working preview. Speech recognition (Indonesian/English), streaming AI brain, voice picker, local system commands. See [Roadmap](#roadmap).
+> ⚠️ **Work in progress** — Jarvis is still under active development. Expect bugs and breaking changes.
+>
+> **Status:** v4 — working preview. Speech recognition (Indonesian/English), streaming AI brain, voice picker, local system commands.
 
 ---
 
