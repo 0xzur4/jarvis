@@ -114,5 +114,3 @@ jarvis/
 ## License
 
 MIT — see [LICENSE](LICENSE).
-
-*Not affiliated with Marvel. Just a fan build.*
