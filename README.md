@@ -100,7 +100,6 @@ jarvis/
 ├── models/              # ggml-base.bin goes here (downloaded separately, gitignored)
 ├── build.sh             # Cross-compile script (Linux → Windows via llvm-mingw)
 ├── README.md            # This file (English)
-└── README-INDONESIA.txt # User guide in Indonesian (shipped with releases)
 ```
 
 ---
