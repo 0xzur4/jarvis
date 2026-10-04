@@ -1,0 +1,16 @@
+# Build outputs
+dist/
+build/
+*.exe
+*.dll
+*.zip
+
+# Whisper model (~148MB) - download separately, see README.md
+models/*.bin
+models/*.pt
+
+# CMake leftovers (if you ever switch to CMake)
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
