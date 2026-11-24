@@ -2,6 +2,7 @@
 #include "config.h"
 #include <windows.h>
 #include <dpapi.h>
+#include <cstdint>
 #include <vector>
 
 namespace {

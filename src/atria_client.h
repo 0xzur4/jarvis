@@ -3,6 +3,7 @@
 #include <windows.h>
 #include <functional>
 #include <string>
+#include <vector>
 
 struct AtriaConfig {
     std::string base_url;  // e.g. https://api.atria-asi.ai/v1
@@ -10,12 +11,23 @@ struct AtriaConfig {
     std::string api_key;   // UTF-8
 };
 
+struct ChatMessage {
+    std::string role;     // "user" or "assistant"
+    std::string content;  // UTF-8
+};
+
 class AtriaClient {
 public:
     explicit AtriaClient(const AtriaConfig& cfg) : cfg_(cfg) {}
 
-    // Streaming chat. on_token receives each delta chunk; return false to abort.
-    // Returns true on clean completion ([DONE] or finish_reason), false on error.
+    // Streaming chat with conversation history. on_token receives each delta chunk;
+    // return false to abort. Returns true on clean completion, false on error.
+    bool chat_stream(const std::string& system_prompt,
+                     const std::vector<ChatMessage>& history,
+                     const std::function<bool(const std::string&)>& on_token,
+                     std::string& error);
+
+    // Single-turn convenience wrapper.
     bool chat_stream(const std::string& system_prompt, const std::string& user_text,
                      const std::function<bool(const std::string&)>& on_token,
                      std::string& error);

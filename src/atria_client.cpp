@@ -134,14 +134,18 @@ done:
     return ok;
 }
 
-bool AtriaClient::chat_stream(const std::string& system_prompt, const std::string& user_text,
+bool AtriaClient::chat_stream(const std::string& system_prompt,
+                              const std::vector<ChatMessage>& history,
                               const std::function<bool(const std::string&)>& on_token,
                               std::string& error) {
     std::string body = "{\"model\":\"" + json_escape(cfg_.model) + "\",\"stream\":true,"
-                       "\"messages\":["
-                       "{\"role\":\"system\",\"content\":\"" + json_escape(system_prompt) + "\"},"
-                       "{\"role\":\"user\",\"content\":\"" + json_escape(user_text) + "\"}"
-                       "]}";
+                       "\"messages\":[{\"role\":\"system\",\"content\":\"" +
+                       json_escape(system_prompt) + "\"}";
+    for (const auto& m : history) {
+        body += ",{\"role\":\"" + json_escape(m.role) + "\",\"content\":\"" +
+                json_escape(m.content) + "\"}";
+    }
+    body += "]}";
     std::string full;
     DWORD status = 0;
     if (!post("/chat/completions", body, true, on_token, full, error, status)) return false;
@@ -150,6 +154,13 @@ bool AtriaClient::chat_stream(const std::string& system_prompt, const std::strin
         return false;
     }
     return true;
+}
+
+bool AtriaClient::chat_stream(const std::string& system_prompt, const std::string& user_text,
+                              const std::function<bool(const std::string&)>& on_token,
+                              std::string& error) {
+    std::vector<ChatMessage> single = {{"user", user_text}};
+    return chat_stream(system_prompt, single, on_token, error);
 }
 
 bool AtriaClient::test_connection(std::string& error) {

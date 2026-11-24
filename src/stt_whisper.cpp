@@ -31,7 +31,7 @@ bool WhisperSTT::init(const std::string& model_path, const std::string& language
     whisper_context_params cparams = whisper_context_default_params();
     ctx_ = whisper_init_from_file_with_params(model_path.c_str(), cparams);
     if (!ctx_) {
-        error = "whisper model failed to load (missing/corrupt models/whisper-base.bin?)";
+        error = "whisper model failed to load (missing/corrupt models/ggml-base.bin?)";
         return false;
     }
     return true;

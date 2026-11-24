@@ -5,7 +5,9 @@
 #include "tts_sapi.h"
 #include "syscontrol.h"
 #include <windows.h>
+#include <condition_variable>
 #include <cwctype>
+#include <queue>
 #include <thread>
 #include <vector>
 
@@ -111,6 +113,58 @@ std::wstring strip_trailing_punct(const std::wstring& s) {
     return s.substr(0, b + 1);
 }
 
+// Strip optional leading wake/politeness prefixes so commands must appear at
+// the start of the utterance (avoids false positives like "what is open source").
+std::wstring strip_command_prefix(std::wstring s) {
+    static const wchar_t* kPrefixes[] = {
+        L"hey jarvis", L"hei jarvis", L"halo jarvis", L"hi jarvis", L"jarvis",
+        L"tolong", L"coba", L"bisa tolong", L"bisa",
+        L"please", L"can you", L"could you",
+    };
+    bool changed = true;
+    while (changed) {
+        changed = false;
+        s = trim(s);
+        while (!s.empty() && (s.front() == L',' || s.front() == L':' || s.front() == L'-')) {
+            s.erase(0, 1);
+            s = trim(s);
+        }
+        for (const wchar_t* p : kPrefixes) {
+            size_t len = wcslen(p);
+            if (s.size() > len && s.compare(0, len, p) == 0 &&
+                (s[len] == L' ' || s[len] == L',' || s[len] == L':')) {
+                s = trim(s.substr(len));
+                changed = true;
+                break;
+            }
+        }
+    }
+    return s;
+}
+
+int count_words(const std::wstring& s) {
+    int count = 0;
+    bool in_word = false;
+    for (wchar_t c : s) {
+        if (iswspace(c)) in_word = false;
+        else if (!in_word) { in_word = true; ++count; }
+    }
+    return count;
+}
+
+bool file_exists(const std::wstring& path) {
+    DWORD a = GetFileAttributesW(path.c_str());
+    return a != INVALID_FILE_ATTRIBUTES && !(a & FILE_ATTRIBUTE_DIRECTORY);
+}
+
+std::wstring resolve_whisper_model(const std::wstring& exe_dir) {
+    std::wstring primary = exe_dir + L"\\models\\ggml-base.bin";
+    if (file_exists(primary)) return primary;
+    std::wstring legacy = exe_dir + L"\\models\\whisper-base.bin";
+    if (file_exists(legacy)) return legacy;
+    return primary;
+}
+
 }  // namespace
 
 Brain::Brain(const AtriaConfig& cfg, const std::wstring& exe_dir, StateCb cb,
@@ -150,6 +204,11 @@ void Brain::set_tts_voice(const std::wstring& token_id) {
     tts_voice_id_ = token_id;
 }
 
+void Brain::clear_history() {
+    std::lock_guard<std::mutex> lk(history_mutex_);
+    history_.clear();
+}
+
 std::string Brain::current_lang() {
     std::lock_guard<std::mutex> lk(lang_mutex_);
     return stt_lang_;
@@ -161,18 +220,18 @@ std::wstring Brain::current_voice() {
 }
 
 bool Brain::handle_local_command(const std::wstring& transcript, std::wstring& spoken) {
-    std::wstring orig = trim(transcript);
-    std::wstring t = lower(orig);
+    std::wstring orig = strip_trailing_punct(trim(transcript));
+    std::wstring t = strip_command_prefix(lower(orig));
     bool indonesian = (current_lang() != "en");
 
-    // "buka <app>" / "open <app>" - tolerant: keyword may appear anywhere
-    // ("tolong buka visual studio code"). Target = text after the keyword.
+    // "buka <app>" / "open <app>" - must be at the start of the command (after
+    // optional wake/politeness prefix) and target at most 4 words.
     for (const wchar_t* kw : {L"buka ", L"open "}) {
-        size_t pos = t.find(kw);
-        if (pos == std::wstring::npos) continue;
-        std::wstring target = strip_trailing_punct(trim(orig.substr(pos + wcslen(kw))));
-        if (target.empty()) continue;
-        std::wstring app = resolve_app_name(lower(target));
+        size_t kwlen = wcslen(kw);
+        if (t.compare(0, kwlen, kw) != 0) continue;
+        std::wstring target = strip_trailing_punct(trim(t.substr(kwlen)));
+        if (target.empty() || count_words(target) > 4) continue;
+        std::wstring app = resolve_app_name(target);
         bool ok = sys_open_app(app);
         if (!ok) {
             // never fail silently: say so out loud
@@ -185,22 +244,24 @@ bool Brain::handle_local_command(const std::wstring& transcript, std::wstring& s
         return true;
     }
 
-    // "volume <0-100>" / "volume ke <0-100>"
+    // "volume <0-100>" / "volume ke <0-100>" / "set volume <0-100>"
     auto try_volume = [&](const std::wstring& kw) -> bool {
         if (t.compare(0, kw.size(), kw) != 0) return false;
         std::wstring rest = trim(t.substr(kw.size()));
         if (rest.compare(0, 3, L"ke ") == 0) rest = trim(rest.substr(3));
+        else if (rest.compare(0, 3, L"to ") == 0) rest = trim(rest.substr(3));
         try {
             int v = std::stoi(rest);
             bool ok = sys_set_volume(v);
-            if (v < 0) v = 0; if (v > 100) v = 100;
+            if (v < 0) v = 0;
+            if (v > 100) v = 100;
             spoken = ok ? (indonesian ? L"Volume diatur ke " + std::to_wstring(v) + L" persen."
                                       : L"Volume set to " + std::to_wstring(v) + L" percent.")
                         : (indonesian ? L"Gagal mengatur volume." : L"Could not set volume.");
             return true;
         } catch (...) { return false; }
     };
-    if (try_volume(L"volume")) return true;
+    if (try_volume(L"volume") || try_volume(L"set volume") || try_volume(L"atur volume")) return true;
 
     // "kunci" / "kunci layar" / "lock"
     if (t == L"kunci" || t == L"kunci layar" || t == L"kunci komputer") {
@@ -220,7 +281,7 @@ void Brain::loop_main() {
     // --- init engines once ---
     WhisperSTT stt;
     std::string err;
-    std::wstring model_path_w = exe_dir_ + L"\\models\\whisper-base.bin";
+    std::wstring model_path_w = resolve_whisper_model(exe_dir_);
     std::string lang = current_lang();
     bool stt_ok = stt.init(narrow(model_path_w), lang, err);
     SapiTTS tts;
@@ -285,37 +346,89 @@ void Brain::loop_main() {
             continue;  // back to LISTEN automatically
         }
 
-        // --- LLM streaming -> speak per sentence ---
-        std::wstring pending;
-        std::wstring full_reply;
+        // --- LLM streaming (producer thread) -> speak per sentence (COM STA thread) ---
+        // Running WinHTTP SSE on a separate thread prevents blocking SAPI TTS
+        // from stalling or timing out the HTTP stream.
+        std::vector<ChatMessage> req_messages;
+        {
+            std::lock_guard<std::mutex> lk(history_mutex_);
+            req_messages = history_;
+        }
+        req_messages.push_back({"user", text});
+
+        std::mutex q_mtx;
+        std::condition_variable q_cv;
+        std::queue<std::wstring> tts_queue;
+        bool stream_done = false;
         bool stream_ok = false;
         std::string stream_err;
+        std::string full_reply_utf8;
 
-        auto on_token = [&](const std::string& tok) -> bool {
-            if (stop_) return false;
-            pending += widen(tok);
-            for (auto& s : take_sentences(pending)) {
+        std::thread sse_thread([&] {
+            std::wstring pending;
+            auto on_token = [&](const std::string& tok) -> bool {
                 if (stop_) return false;
-                full_reply += s + L" ";
-                cb_(AppState::SPEAKING, full_reply);
-                tts.speak(s);  // mic stays closed: no self-trigger
-                if (!stop_) cb_(AppState::THINKING, full_reply);
+                full_reply_utf8 += tok;
+                pending += widen(tok);
+                auto sentences = take_sentences(pending);
+                if (!sentences.empty()) {
+                    {
+                        std::lock_guard<std::mutex> lk(q_mtx);
+                        for (auto& s : sentences) tts_queue.push(std::move(s));
+                    }
+                    q_cv.notify_one();
+                }
+                return true;
+            };
+
+            stream_ok = client.chat_stream(kSystemPrompt, req_messages, on_token, stream_err);
+
+            std::wstring tail = trim(pending);
+            {
+                std::lock_guard<std::mutex> lk(q_mtx);
+                if (!tail.empty() && !stop_) tts_queue.push(std::move(tail));
+                stream_done = true;
             }
-            return true;
-        };
+            q_cv.notify_one();
+        });
 
-        stream_ok = client.chat_stream(kSystemPrompt, text, on_token, stream_err);
-
-        std::wstring tail = trim(pending);
-        if (!tail.empty() && !stop_) {
-            full_reply += tail;
-            cb_(AppState::SPEAKING, full_reply);
-            tts.speak(tail);
+        std::wstring spoken_so_far;
+        while (true) {
+            std::wstring sentence;
+            {
+                std::unique_lock<std::mutex> lk(q_mtx);
+                q_cv.wait(lk, [&] { return !tts_queue.empty() || stream_done || stop_.load(); });
+                if (stop_) break;
+                if (tts_queue.empty()) {
+                    if (stream_done) break;
+                    continue;
+                }
+                sentence = std::move(tts_queue.front());
+                tts_queue.pop();
+            }
+            if (!spoken_so_far.empty()) spoken_so_far += L" ";
+            spoken_so_far += sentence;
+            cb_(AppState::SPEAKING, spoken_so_far);
+            tts.speak(sentence);  // mic stays closed: no self-trigger
+            if (stop_) break;
         }
+
+        if (stop_) tts.stop();
+        if (sse_thread.joinable()) sse_thread.join();
+
         if (!stream_ok && !stop_) {
             std::wstring msg = widen("Maaf, ada gangguan koneksi AI: " + stream_err);
             cb_(AppState::SPEAKING, msg);
             tts.speak(msg);
+        } else if (stream_ok && !stop_ && !full_reply_utf8.empty()) {
+            constexpr size_t kMaxHistoryMessages = 20;  // 10 user+assistant turns
+            std::lock_guard<std::mutex> lk(history_mutex_);
+            history_.push_back({"user", text});
+            history_.push_back({"assistant", full_reply_utf8});
+            if (history_.size() > kMaxHistoryMessages) {
+                history_.erase(history_.begin(),
+                               history_.begin() + (history_.size() - kMaxHistoryMessages));
+            }
         }
         // loop back to LISTEN automatically - no button needed
     }

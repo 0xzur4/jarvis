@@ -18,7 +18,7 @@ const UINT_PTR kTalkTimer = 1;
 const int kFaceScale = 4;
 const int kPad = 26;  // padding around the face inside the window
 
-enum { IDM_API = 101, IDM_MIC, IDM_MIC_TOGGLE, IDM_EXIT };
+enum { IDM_API = 101, IDM_MIC, IDM_MIC_TOGGLE, IDM_RESET_CHAT, IDM_EXIT };
 
 struct App {
     HINSTANCE hInst;
@@ -98,6 +98,7 @@ void show_context_menu(App* a) {
                 IDM_MIC_TOGGLE,
                 a->mic_muted ? L"Mic: Mati (klik untuk menyalakan)"
                              : L"Mic: Nyala (klik untuk mematikan)");
+    AppendMenuW(m, MF_STRING, IDM_RESET_CHAT, L"Reset Percakapan");
     AppendMenuW(m, MF_SEPARATOR, 0, nullptr);
     AppendMenuW(m, MF_STRING, IDM_EXIT, L"Keluar");
     SetForegroundWindow(a->hwnd);  // so the menu dismisses correctly
@@ -146,6 +147,8 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             a->mic_muted = !a->mic_muted;
             if (a->brain) a->brain->set_mic_muted(a->mic_muted);
             InvalidateRect(hwnd, nullptr, TRUE);
+        } else if (id == IDM_RESET_CHAT) {
+            if (a->brain) a->brain->clear_history();
         } else if (id == IDM_EXIT) {
             DestroyWindow(hwnd);
         }

@@ -30,6 +30,7 @@ public:
     void set_stt_language(const std::string& lang);  // "id"/"en"/"auto"
     void set_tts_voice(const std::wstring& token_id);  // manual SAPI voice override;
                                                       // empty = automatic
+    void clear_history();  // forget prior conversation turns
 
 private:
     void loop_main();
@@ -44,8 +45,10 @@ private:
     std::thread worker_;
     std::mutex run_mutex_;
     std::mutex lang_mutex_;          // guards stt_lang_ and tts_voice_id_
+    std::mutex history_mutex_;       // guards history_
     std::string stt_lang_ = "id";    // "id" / "en" / "auto"
     std::wstring tts_voice_id_;      // manual voice override, empty = automatic
+    std::vector<ChatMessage> history_;
     bool running_ = false;
 
     std::string current_lang();  // mutex-protected copy

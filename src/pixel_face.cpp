@@ -17,11 +17,31 @@ const FaceDef kDefs[] = {
 };
 }  // namespace
 
+PixelFace::~PixelFace() {
+    for (auto& f : faces_) {
+        if (f.hbmp) { DeleteObject(f.hbmp); f.hbmp = nullptr; }
+    }
+}
+
 bool PixelFace::init() {
     for (const auto& d : kDefs) {
         FaceBmp& f = faces_[(int)d.id];
+        if (f.hbmp) { DeleteObject(f.hbmp); f.hbmp = nullptr; }
         f.w = d.w; f.h = d.h;
-        f.px.assign((size_t)d.w * d.h, 0);
+
+        BITMAPINFO bmi{};
+        bmi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+        bmi.bmiHeader.biWidth = f.w;
+        bmi.bmiHeader.biHeight = -f.h;  // top-down
+        bmi.bmiHeader.biPlanes = 1;
+        bmi.bmiHeader.biBitCount = 32;
+        bmi.bmiHeader.biCompression = BI_RGB;
+
+        void* bits = nullptr;
+        f.hbmp = CreateDIBSection(nullptr, &bmi, DIB_RGB_COLORS, &bits, nullptr, 0);
+        if (!f.hbmp || !bits) return false;
+
+        uint32_t* px = static_cast<uint32_t*>(bits);
         int stride = (d.w + 7) / 8;
         for (int y = 0; y < d.h; ++y) {
             for (int x = 0; x < d.w; ++x) {
@@ -29,7 +49,7 @@ bool PixelFace::init() {
                 bool white = (byte >> (7 - (x % 8))) & 1;
                 // Source PNG: black line-art on white. We want white lines,
                 // transparent background so the dark window shows through.
-                f.px[(size_t)y * d.w + x] = white ? 0x00000000u : 0xFFFFFFFFu;
+                px[(size_t)y * d.w + x] = white ? 0x00000000u : 0xFFFFFFFFu;
             }
         }
     }
@@ -38,25 +58,14 @@ bool PixelFace::init() {
 
 void PixelFace::draw(HDC hdc, const RECT& rc, FaceId face, int scale) {
     const FaceBmp& f = faces_[(int)face];
-    if (f.w == 0) return;
+    if (f.w == 0 || !f.hbmp) return;
     int dw = f.w * scale, dh = f.h * scale;
     int dx = rc.left + ((rc.right - rc.left) - dw) / 2;
     int dy = rc.top + ((rc.bottom - rc.top) - dh) / 2;
 
-    BITMAPINFO bmi{};
-    bmi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
-    bmi.bmiHeader.biWidth = f.w;
-    bmi.bmiHeader.biHeight = -f.h;  // top-down
-    bmi.bmiHeader.biPlanes = 1;
-    bmi.bmiHeader.biBitCount = 32;
-    bmi.bmiHeader.biCompression = BI_RGB;
-
-    void* bits = nullptr;
     HDC mem = CreateCompatibleDC(hdc);
-    HBITMAP hbmp = CreateDIBSection(mem, &bmi, DIB_RGB_COLORS, &bits, nullptr, 0);
-    if (!hbmp) { DeleteDC(mem); return; }
-    memcpy(bits, f.px.data(), f.px.size() * sizeof(uint32_t));
-    HBITMAP old = (HBITMAP)SelectObject(mem, hbmp);
+    if (!mem) return;
+    HBITMAP old = (HBITMAP)SelectObject(mem, f.hbmp);
 
     BLENDFUNCTION bf{};
     bf.BlendOp = AC_SRC_OVER;
@@ -65,7 +74,6 @@ void PixelFace::draw(HDC hdc, const RECT& rc, FaceId face, int scale) {
     AlphaBlend(hdc, dx, dy, dw, dh, mem, 0, 0, f.w, f.h, bf);
 
     SelectObject(mem, old);
-    DeleteObject(hbmp);
     DeleteDC(mem);
 }
 
